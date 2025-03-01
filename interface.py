@@ -14,7 +14,7 @@ from logica import GerenciadorCargas, Carga, MAX_WEIGHT
 class InterfaceApp(tk.Tk):
     def __init__(self):
         super().__init__()
-        self.title("Gestor de Carga Nacional - Lusocargo v2.5 teste")
+        self.title("Gestor de Carga Nacional - Lusocargo v2.5.1 teste")
         self.geometry("1200x900")
 
         style = ttk.Style(self)
