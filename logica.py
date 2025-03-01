@@ -1,6 +1,6 @@
 # Todo o código foi desenvolvido por Eduardo Isidoro
-# a distribuição desta ferramenta não é permitida pelo autor da mesm
-# o autor da mesma pode a qualquer momento requerer o diteitos e cobrar a sua utilização
+# a distribuição desta ferramenta não é permitida pelo autor da mesma
+# o autor da mesma pode a qualquer momento requerer os direitos e cobrar a sua utilização
 # a ferramenta de testes ainda não tem qualquer tipo de verificação e ou auto update
 # mas a mesma pode vir a ter futuramente.
 #
@@ -92,17 +92,19 @@ class Pilha:
         return True
 
     def footprint(self):
+        """Retorna (x, y, largura, comprimento) da área ocupada no piso."""
         return (self.x, self.y, self.base_comp, self.base_larg)
 
 class GerenciadorCargas:
     def __init__(self):
         self.cargas = []
         self.pilhas = []
-        self.candidate_positions = [(0, 0)]  # onde podemos criar novas pilhas
+        # Começamos com uma posição candidata (0, 0). 
+        # O algoritmo tentará preencher a largura (y) primeiro, depois o comprimento (x).
+        self.candidate_positions = [(0, 0)]
 
     def adicionar_carga(self, carga):
-        # Adiciona a carga à lista e recalcula tudo do zero,
-        # assim reorienta e reposiciona as anteriores, se necessário.
+        # Adiciona a carga à lista e recalcula tudo do zero.
         self.cargas.append(carga)
         self.recalcular_empilhamento()
         return carga.posicionada
@@ -113,66 +115,68 @@ class GerenciadorCargas:
         self.recalcular_empilhamento()
 
     def tentar_posicionar_nova_pilha(self, carga):
+        """
+        Tenta colocar a 'carga' em alguma das posições candidatas,
+        avaliando as duas orientações (normal e girada).
+        O foco é preencher a largura (y) antes de avançar no comprimento (x).
+        """
         comp, larg, alt = Pilha.determine_base(carga)
-        # Duas orientações possíveis no piso:
         orientacoes = [
-            (comp, larg),  # normal
-            (larg, comp)   # girado 90°
+            (comp, larg),
+            (larg, comp)
         ]
-        for pos in self.candidate_positions[:]:
+
+        # Ordena as posições candidatas por x crescente, depois y crescente
+        # para que o algoritmo vá "subindo" na largura antes de avançar no comprimento.
+        for pos in sorted(self.candidate_positions, key=lambda p: (p[0], p[1])):
             x, y = pos
 
-            # Ver quais orientações cabem
-            opcoes_viaveis = []
             for (oc, ol) in orientacoes:
-                # Testa se cabe dentro do caminhão
+                # Verifica se cabe dentro do camião
                 if x + oc <= TRUCK_DIMS['length'] and y + ol <= TRUCK_DIMS['width']:
                     # Testa sobreposição
                     new_rect = (x, y, oc, ol)
                     overlap_found = any(rect_overlap(new_rect, pilha.footprint()) for pilha in self.pilhas)
                     if not overlap_found:
-                        opcoes_viaveis.append((oc, ol))
+                        # Criar a pilha nesta posição
+                        nova_pilha = Pilha(x, y, oc, ol, alt, carga)
+                        self.pilhas.append(nova_pilha)
+                        self.candidate_positions.remove(pos)
 
-            # Se não coube em nenhuma orientação, continua
-            if not opcoes_viaveis:
-                continue
+                        # Gera novas posições candidatas:
+                        # 1) Avançar na largura
+                        new_candidate_y = (x, y + ol)
+                        if (new_candidate_y not in self.candidate_positions
+                                and new_candidate_y[1] < TRUCK_DIMS['width']):
+                            self.candidate_positions.append(new_candidate_y)
 
-            # Escolhe a orientação que minimiza (x + oc), para ocupar menos comprimento
-            opcoes_viaveis.sort(key=lambda o: x + o[0])
-            best_comp, best_larg = opcoes_viaveis[0]
+                        # 2) Avançar no comprimento
+                        new_candidate_x = (x + oc, y)
+                        if (new_candidate_x not in self.candidate_positions
+                                and new_candidate_x[0] < TRUCK_DIMS['length']):
+                            self.candidate_positions.append(new_candidate_x)
 
-            # Criar a pilha com essa orientação
-            nova_pilha = Pilha(x, y, best_comp, best_larg, alt, carga)
-            self.pilhas.append(nova_pilha)
-            self.candidate_positions.remove(pos)
-
-            # Gerar novas posições.
-            # Primeiro tentamos ocupar mais largura (y + best_larg),
-            # depois avançamos no comprimento (x + best_comp).
-            new_candidate = (x, y + best_larg)
-            if (new_candidate not in self.candidate_positions
-                    and new_candidate[1] < TRUCK_DIMS['width']):
-                self.candidate_positions.append(new_candidate)
-
-            new_candidate = (x + best_comp, y)
-            if (new_candidate not in self.candidate_positions
-                    and new_candidate[0] < TRUCK_DIMS['length']):
-                self.candidate_positions.append(new_candidate)
-
-            return True
+                        return True
         return False
 
     def recalcular_empilhamento(self):
-        # Limpa todas as pilhas e refaz o layout do zero
+        """
+        Limpa todas as pilhas e refaz o layout do zero,
+        ordenando as cargas por volume decrescente
+        para tentar ocupar melhor o espaço.
+        """
         self.pilhas = []
         self.candidate_positions = [(0, 0)]
         for c in self.cargas:
             c.posicionada = False
 
-        # Recoloca cada carga, permitindo que até as antigas mudem de posição/orientação
-        for c in self.cargas:
+        # Ordena as cargas por volume decrescente (opcional, mas geralmente ajuda)
+        cargas_ordenadas = sorted(self.cargas, key=lambda c: c.volume, reverse=True)
+
+        # Recoloca cada carga
+        for c in cargas_ordenadas:
             placed = False
-            # Tentar empilhar em pilhas existentes
+            # Tentar empilhar em pilhas existentes primeiro
             for pilha in self.pilhas:
                 if pilha.empilhar(c):
                     placed = True
@@ -182,14 +186,22 @@ class GerenciadorCargas:
                 self.tentar_posicionar_nova_pilha(c)
 
     def get_used_space(self):
+        """
+        Retorna (max_x, max_y), as dimensões máximas efetivamente ocupadas no piso.
+        """
         max_x = max((p.x + p.base_comp for p in self.pilhas), default=0.0)
         max_y = max((p.y + p.base_larg for p in self.pilhas), default=0.0)
         return max_x, max_y
 
     def get_max_height(self):
+        """Retorna a altura máxima de empilhamento entre todas as pilhas."""
         return max((p.total_height for p in self.pilhas), default=0.0)
 
     def verificar_limites(self):
+        """
+        Verifica se o peso total, volume total ou dimensões máximas foram excedidos,
+        ou se há cargas não posicionadas.
+        """
         status = True
         mensagens = []
         total_peso = sum(c.peso for c in self.cargas)
@@ -207,10 +219,10 @@ class GerenciadorCargas:
         used_x, used_y = self.get_used_space()
         if used_x > TRUCK_DIMS['length']:
             status = False
-            mensagens.append(f"COMPRIMENTO OCUPADO: {used_x:.2f} m")
+            mensagens.append(f"COMPRIMENTO OCUPADO: {used_x:.2f} m (Máx: {TRUCK_DIMS['length']} m)")
         if used_y > TRUCK_DIMS['width']:
             status = False
-            mensagens.append(f"LARGURA OCUPADA: {used_y:.2f} m")
+            mensagens.append(f"LARGURA OCUPADA: {used_y:.2f} m (Máx: {TRUCK_DIMS['width']} m)")
 
         nao_posicionadas = sum(1 for c in self.cargas if not c.posicionada)
         if nao_posicionadas > 0:
